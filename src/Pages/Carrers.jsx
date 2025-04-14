@@ -1,6 +1,6 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { Helmet } from "react-helmet-async";
-import { FaArrowRight, FaSearch, FaCheckCircle, FaCheck, FaBriefcase, FaRegClock, FaMapMarkerAlt, FaPaperPlane } from "react-icons/fa";
+import { FaArrowRight, FaSearch,FaTrash, FaCheckCircle, FaCheck, FaBriefcase, FaRegClock, FaMapMarkerAlt, FaPaperPlane, FaUser, FaLock, FaSignInAlt, FaUserPlus, FaTimes, FaClock, FaThumbsUp, FaThumbsDown, FaEdit } from "react-icons/fa";
 import { motion } from "framer-motion";
 import emailjs from '@emailjs/browser';
 
@@ -8,7 +8,7 @@ const CareersPage = () => {
   const currentUrl = window.location.href;
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedJob, setSelectedJob] = useState(null);
-  const [applicationStep, setApplicationStep] = useState(0); // 0: not applying, 1: personal info, 2: documents, 3: review, 4: submitted
+  const [applicationStep, setApplicationStep] = useState(0);
   const [formData, setFormData] = useState({
     fullName: "",
     collegeEmail: "",
@@ -24,6 +24,18 @@ const CareersPage = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showRegister, setShowRegister] = useState(false);
+  const [loginData, setLoginData] = useState({ email: "", password: "" });
+  const [registerData, setRegisterData] = useState({ 
+    fullName: "", 
+    email: "", 
+    password: "", 
+    confirmPassword: "" 
+  });
+  const [viewAppliedJobs, setViewAppliedJobs] = useState(false);
+  const [appliedJobs, setAppliedJobs] = useState([]);
   const formRef = useRef();
 
   // Sample job data
@@ -35,7 +47,7 @@ const CareersPage = () => {
       location: "Remote",
       experience: "2-3 years",
       company: "Qloron Pvt. Ltd",
-      description: "We're looking for a creative UX/UI Designer to join our team and help design beautiful, intuitive interfaces for our products."
+      description: "We're looking for a creative UX/UI Designer to join our team and help design products."
     },
     {
       id: 2,
@@ -84,21 +96,101 @@ const CareersPage = () => {
     }    
   ];
 
+  // Check if user is logged in on component mount
+  useEffect(() => {
+    const user = localStorage.getItem('careerUser');
+    if (user) {
+      setIsLoggedIn(true);
+      const applied = localStorage.getItem(`appliedJobs_${JSON.parse(user).email}`) || '[]';
+      setAppliedJobs(JSON.parse(applied));
+    }
+  }, []);
+
   const filteredJobs = jobs.filter(job => 
     job.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
     job.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  ).filter(job => {
+    if (viewAppliedJobs) {
+      return appliedJobs.some(appliedJob => appliedJob.id === job.id);
+    }
+    return true;
+  });
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
+  const handleLoginChange = (e) => {
+    const { name, value } = e.target;
+    setLoginData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleRegisterChange = (e) => {
+    const { name, value } = e.target;
+    setRegisterData(prev => ({ ...prev, [name]: value }));
+  };
+
   const handleFileUpload = (e) => {
     setFormData(prev => ({ ...prev, resume: e.target.files[0] }));
   };
 
+  const handleLogin = (e) => {
+    e.preventDefault();
+    // In a real app, you would verify credentials with a backend
+    const users = JSON.parse(localStorage.getItem('careerUsers')) || [];
+    const user = users.find(u => u.email === loginData.email && u.password === loginData.password);
+    
+    if (user) {
+      localStorage.setItem('careerUser', JSON.stringify(user));
+      setIsLoggedIn(true);
+      setShowLogin(false);
+      const applied = localStorage.getItem(`appliedJobs_${user.email}`) || '[]';
+      setAppliedJobs(JSON.parse(applied));
+    } else {
+      alert('Invalid credentials. Please try again.');
+    }
+  };
+
+  const handleRegister = (e) => {
+    e.preventDefault();
+    if (registerData.password !== registerData.confirmPassword) {
+      alert("Passwords don't match!");
+      return;
+    }
+
+    const users = JSON.parse(localStorage.getItem('careerUsers') || '[]');
+    
+    if (users.some(u => u.email === registerData.email)) {
+      alert('User with this email already exists!');
+      return;
+    }
+
+    const newUser = {
+      fullName: registerData.fullName,
+      email: registerData.email,
+      password: registerData.password
+    };
+
+    users.push(newUser);
+    localStorage.setItem('careerUsers', JSON.stringify(users));
+    localStorage.setItem('careerUser', JSON.stringify(newUser));
+    setIsLoggedIn(true);
+    setShowRegister(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('careerUser');
+    setIsLoggedIn(false);
+    setAppliedJobs([]);
+    setViewAppliedJobs(false);
+  };
+
   const handleApply = (job) => {
+    if (!isLoggedIn) {
+      setShowLogin(true);
+      return;
+    }
     setSelectedJob(job);
     setApplicationStep(1);
   };
@@ -129,12 +221,26 @@ const CareersPage = () => {
 
     emailjs.send(
       'service_6dfg8xu', // YOUR_SERVICE_ID
-      'template_sfxj4op', // YOUR_TEMPLATE_ID (create a new template for job applications)
+      'template_sfxj4op', // YOUR_TEMPLATE_ID
       templateParams,
       'v2J5a5xaZFSvqYOsH' // YOUR_PUBLIC_KEY
     )
     .then((result) => {
       console.log(result.text);
+      
+      // Save application to localStorage
+      const user = JSON.parse(localStorage.getItem('careerUser'));
+      const appliedJob = {
+        ...selectedJob,
+        applicationDate: new Date().toISOString(),
+        status: 'Under Review',
+        applicationData: formData
+      };
+      
+      const updatedAppliedJobs = [...appliedJobs, appliedJob];
+      setAppliedJobs(updatedAppliedJobs);
+      localStorage.setItem(`appliedJobs_${user.email}`, JSON.stringify(updatedAppliedJobs));
+      
       setApplicationStep(4);
       setIsSuccess(true);
     }, (error) => {
@@ -145,6 +251,42 @@ const CareersPage = () => {
       setIsSubmitting(false);
     });
   };
+
+  const updateApplicationStatus = (jobId, newStatus) => {
+    const user = JSON.parse(localStorage.getItem('careerUser'));
+    const updatedJobs = appliedJobs.map(job => {
+      if (job.id === jobId) {
+        return { ...job, status: newStatus };
+      }
+      return job;
+    });
+    
+    setAppliedJobs(updatedJobs);
+    localStorage.setItem(`appliedJobs_${user.email}`, JSON.stringify(updatedJobs));
+  };
+
+  const getStatusBadge = (status) => {
+    switch (status) {
+      case 'Under Review':
+        return <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm flex items-center"><FaClock className="mr-1" /> {status}</span>;
+      case 'Shortlisted':
+        return <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm flex items-center"><FaThumbsUp className="mr-1" /> {status}</span>;
+      case 'Selected':
+        return <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm flex items-center"><FaCheck className="mr-1" /> {status}</span>;
+      case 'Rejected':
+        return <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm flex items-center"><FaThumbsDown className="mr-1" /> {status}</span>;
+      default:
+        return <span className="bg-gray-100 text-gray-800 px-3 py-1 rounded-full text-sm">{status}</span>;
+    }
+  };
+
+  const withdrawApplication = (jobId) => {
+    const user = JSON.parse(localStorage.getItem('careerUser'));
+    const updatedJobs = appliedJobs.filter(job => job.id !== jobId);
+    setAppliedJobs(updatedJobs);
+    localStorage.setItem(`appliedJobs_${user.email}`, JSON.stringify(updatedJobs));
+  };
+  
 
   return (
     <>
@@ -201,6 +343,48 @@ const CareersPage = () => {
           >
             Explore exciting career opportunities and help us build the future
           </motion.p>
+
+          {isLoggedIn ? (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.6 }}
+              className="flex justify-center gap-4"
+            >
+              <button
+                onClick={() => setViewAppliedJobs(!viewAppliedJobs)}
+                className="bg-white text-cyan-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors"
+              >
+                {viewAppliedJobs ? 'View All Jobs' : 'View My Applications'}
+              </button>
+              <button
+                onClick={handleLogout}
+                className="bg-transparent border border-white text-white px-6 py-2 rounded-lg font-medium hover:bg-white hover:text-cyan-700 transition-colors"
+              >
+                Logout
+              </button>
+            </motion.div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.6 }}
+              className="flex justify-center gap-4"
+            >
+              <button
+                onClick={() => setShowLogin(true)}
+                className="bg-white text-cyan-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors flex items-center"
+              >
+                <FaSignInAlt className="mr-2" /> Login
+              </button>
+              <button
+                onClick={() => setShowRegister(true)}
+                className="bg-transparent border border-white text-white px-6 py-2 rounded-lg font-medium hover:bg-white hover:text-cyan-700 transition-colors flex items-center"
+              >
+                <FaUserPlus className="mr-2" /> Register
+              </button>
+            </motion.div>
+          )}
         </section>
       </div>
 
@@ -215,10 +399,10 @@ const CareersPage = () => {
             className="text-center mb-16"
           >
             <h2 className="text-3xl md:text-4xl font-bold text-gray-800 mb-4">
-              Current <span className="text-cyan-600">Openings</span>
+              {viewAppliedJobs ? 'My Job Applications' : 'Current Openings'}
             </h2>
             <p className="text-gray-600 max-w-2xl mx-auto">
-              Find the perfect position that matches your skills and aspirations
+              {viewAppliedJobs ? 'Track the status of your applications' : 'Find the perfect position that matches your skills and aspirations'}
             </p>
           </motion.div>
 
@@ -236,7 +420,7 @@ const CareersPage = () => {
               </div>
               <input
                 type="text"
-                placeholder="Search jobs by title or keywords..."
+                placeholder={viewAppliedJobs ? "Search your applications..." : "Search jobs by title or keywords..."}
                 className="pl-10 pr-4 py-3 border border-gray-300 rounded-full focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 w-full"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -247,114 +431,389 @@ const CareersPage = () => {
           {/* Jobs Grid */}
           {filteredJobs.length > 0 ? (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {filteredJobs.map((job) => (
-                <motion.div
-                key={job.id}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5 }}
-                viewport={{ once: true }}
-                whileHover={{ y: -5 }}
-                className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-all duration-300 border border-gray-100"
-                >
-                  <div className="p-6">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="p-3 bg-cyan-100 rounded-lg">
-                      <FaBriefcase className="text-cyan-600 text-xl" />
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-bold text-gray-800">{job.title}</h3>
-                      <p className="text-gray-600">{job.type}</p>
-                    </div>
-                  </div>
-                    
-                    <div className="flex flex-wrap gap-4 mb-4">
-                      <div className="flex items-center text-gray-600">
-                        <FaRegClock className="mr-2 text-cyan-500" />
-                        <span>{job.experience} experience</span>
-                      </div>
-                      <div className="flex items-center text-gray-600">
-                        <FaMapMarkerAlt className="mr-2 text-blue-500" />
-                        <span>{job.location}</span>
-                      </div>
-                    </div>
-                    
-                    <p className="text-gray-600 mb-4 line-clamp-3">{job.description}</p>
-                    
-                    
-                    <motion.button
-                      onClick={() => handleApply(job)}
-                      className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+              {filteredJobs.map((job) => {
+                const appliedJob = appliedJobs.find(aj => aj.id === job.id);
+                
+                return (
+                  <motion.div
+                    key={job.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5 }}
+                    viewport={{ once: true }}
+                    whileHover={{ y: -5 }}
+                    className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-all duration-300 border border-gray-100 relative"
                   >
-                    Apply Now <FaArrowRight className="ml-2" />
-                  </motion.button>
-                  </div>
-                </motion.div>
-              ))}
+                    {appliedJob && (
+                      <div className="absolute top-2 right-4">
+                        {getStatusBadge(appliedJob.status)}
+                      </div>
+                    )}
+                    
+                    <div className="p-7">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="p-3 bg-cyan-100 rounded-lg">
+                          <FaBriefcase className="text-cyan-600 text-xl" />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-bold text-gray-800">{job.title}</h3>
+                          <p className="text-gray-600">{job.type}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex flex-wrap gap-4 mb-4">
+                        <div className="flex items-center text-gray-600">
+                          <FaRegClock className="mr-2 text-cyan-500" />
+                          <span>{job.experience} experience</span>
+                        </div>
+                        <div className="flex items-center text-gray-600">
+                          <FaMapMarkerAlt className="mr-2 text-blue-500" />
+                          <span>{job.location}</span>
+                        </div>
+                      </div>
+                      
+                      <p className="text-gray-600 mb-4 line-clamp-3">{job.description}</p>
+                      
+                      {appliedJob ? (
+                        viewAppliedJobs && (
+                          <div className="space-y-4">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-gray-500">Applied on: {new Date(appliedJob.applicationDate).toLocaleDateString()}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-3 items-center">
+                              
+
+                              <button
+                                onClick={() => updateApplicationStatus(job.id, 'Shortlisted')}
+                                className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all duration-200 shadow-sm 
+                                  ${appliedJob.status === 'Shortlisted' 
+                                    ? 'bg-blue-500 text-white' 
+                                    : 'bg-blue-100 text-blue-800 hover:bg-blue-200'}`}
+                              >
+                                <FaThumbsUp className="text-base" />
+                                Shortlisted
+                              </button>
+
+                              <button
+                                onClick={() => updateApplicationStatus(job.id, 'Selected')}
+                                className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all duration-200 shadow-sm 
+                                  ${appliedJob.status === 'Selected' 
+                                    ? 'bg-green-500 text-white' 
+                                    : 'bg-green-100 text-green-800 hover:bg-green-200'}`}
+                              >
+                                <FaCheck className="text-base" />
+                                Selected
+                              </button>
+
+                              <button
+                                onClick={() => updateApplicationStatus(job.id, 'Rejected')}
+                                className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all duration-200 shadow-sm 
+                                  ${appliedJob.status === 'Rejected' 
+                                    ? 'bg-red-500 text-white' 
+                                    : 'bg-red-100 text-red-800 hover:bg-red-200'}`}
+                              >
+                                <FaThumbsDown className="text-base" />
+                                Rejected
+                              </button>
+                              <button
+                                onClick={() => updateApplicationStatus(job.id, 'Under Review')}
+                                className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all duration-200 shadow-sm 
+                                  ${appliedJob.status === 'Under Review' 
+                                    ? 'bg-yellow-500 text-white' 
+                                    : 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'}`}
+                              >
+                                <FaClock className="text-base" />
+                                Under Review
+                              </button>
+                              <button
+                                onClick={() => withdrawApplication(job.id)}
+                                className="flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all duration-200 shadow-sm bg-gray-200 text-gray-800 hover:bg-gray-300"
+                              >
+                                <FaTrash className="text-base" />
+                                Withdraw
+                              </button>
+                            </div>
+
+                          </div>
+                        )
+                      ) : (
+                        <motion.button
+                          onClick={() => handleApply(job)}
+                          className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-medium py-2 px-4 rounded-lg transition-colors flex items-center justify-center"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                        >
+                          Apply Now <FaArrowRight className="ml-2" />
+                        </motion.button>
+                      )}
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
           ) : (
             <div className="text-center py-12">
-              <h3 className="text-xl text-gray-600">No jobs found matching your search</h3>
+              <h3 className="text-xl text-gray-600">
+                {viewAppliedJobs ? "You haven't applied to any jobs yet" : "No jobs found matching your search"}
+              </h3>
+              {viewAppliedJobs && (
+                <button
+                  onClick={() => setViewAppliedJobs(false)}
+                  className="mt-4 bg-cyan-600 text-white px-6 py-2 rounded-lg hover:bg-cyan-700 transition-colors"
+                >
+                  Browse Jobs
+                </button>
+              )}
             </div>
           )}
         </div>
       </section>
+
       {/* How It Works Section */}
-      <section className="py-20 bg-gradient-to-r from-blue-900 to-cyan-800 text-white">
-        <div className="container">
-          <motion.div
-            initial={{ opacity: 0 }}
-            whileInView={{ opacity: 1 }}
-            transition={{ duration: 0.8 }}
-            viewport={{ once: true }}
-            className="text-center mb-16"
-          >
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Apply in 3 Easy Steps
-            </h2>
-            <p className=" max-w-2xl mx-auto">
-              Our simple application process gets you in front of our hiring team quickly
-            </p>
-          </motion.div>
-          
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {[
-              {
-                title: "Find Your Perfect Role",
-                description: "Browse our open positions and find the one that matches your skills and interests.",
-                icon: <FaSearch className="text-3xl" />
-              },
-              {
-                title: "Complete Your Application",
-                description: "Fill out our simple application form and upload your resume.",
-                icon: <FaBriefcase className="text-3xl" />
-              },
-              {
-                title: "Hear Back From Us",
-                description: "Our team will review your application and get back to you promptly.",
-                icon: <FaCheckCircle className="text-3xl" />
-              }
-            ].map((step, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 30 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1, duration: 0.6 }}
-                viewport={{ once: true }}
-                className="bg-white p-8 rounded-xl shadow-md hover:shadow-lg transition-shadow"
-              >
-                <div className="w-16 h-16 bg-cyan-100 rounded-full flex items-center justify-center text-cyan-600 mb-6 mx-auto">
-                  {step.icon}
-                </div>
-                <h3 className="text-xl font-bold text-center text-gray-800 mb-3">{step.title}</h3>
-                <p className="text-gray-600 text-center">{step.description}</p>
-              </motion.div>
-            ))}
+      {!viewAppliedJobs && (
+        <section className="py-20 bg-gradient-to-r from-blue-900 to-cyan-800 text-white">
+          <div className="container">
+            <motion.div
+              initial={{ opacity: 0 }}
+              whileInView={{ opacity: 1 }}
+              transition={{ duration: 0.8 }}
+              viewport={{ once: true }}
+              className="text-center mb-16"
+            >
+              <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                Apply in 3 Easy Steps
+              </h2>
+              <p className=" max-w-2xl mx-auto">
+                Our simple application process gets you in front of our hiring team quickly
+              </p>
+            </motion.div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {[
+                {
+                  title: "Find Your Perfect Role",
+                  description: "Browse our open positions and find the one that matches your skills and interests.",
+                  icon: <FaSearch className="text-3xl" />
+                },
+                {
+                  title: "Complete Your Application",
+                  description: "Fill out our simple application form and upload your resume.",
+                  icon: <FaBriefcase className="text-3xl" />
+                },
+                {
+                  title: "Hear Back From Us",
+                  description: "Our team will review your application and get back to you promptly.",
+                  icon: <FaCheckCircle className="text-3xl" />
+                }
+              ].map((step, index) => (
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, y: 30 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1, duration: 0.6 }}
+                  viewport={{ once: true }}
+                  className="bg-white p-8 rounded-xl shadow-md hover:shadow-lg transition-shadow"
+                >
+                  <div className="w-16 h-16 bg-cyan-100 rounded-full flex items-center justify-center text-cyan-600 mb-6 mx-auto">
+                    {step.icon}
+                  </div>
+                  <h3 className="text-xl font-bold text-center text-gray-800 mb-3">{step.title}</h3>
+                  <p className="text-gray-600 text-center">{step.description}</p>
+                </motion.div>
+              ))}
+            </div>
           </div>
+        </section>
+      )}
+
+      {/* Login Modal */}
+      {showLogin && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <motion.div 
+            className="bg-white rounded-xl shadow-xl w-full max-w-md"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+          >
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-800">Login to Your Account</h2>
+                <button 
+                  onClick={() => setShowLogin(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <FaTimes />
+                </button>
+              </div>
+              
+              <form onSubmit={handleLogin}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <FaUser className="text-gray-400" />
+                    </div>
+                    <input
+                      type="email"
+                      name="email"
+                      value={loginData.email}
+                      onChange={handleLoginChange}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <FaLock className="text-gray-400" />
+                    </div>
+                    <input
+                      type="password"
+                      name="password"
+                      value={loginData.password}
+                      onChange={handleLoginChange}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <button
+                  type="submit"
+                  className="w-full bg-cyan-600 text-white py-2 px-4 rounded-lg hover:bg-cyan-700 transition-colors flex items-center justify-center"
+                >
+                  Login <FaSignInAlt className="ml-2" />
+                </button>
+              </form>
+              
+              <div className="mt-4 text-center">
+                <p className="text-gray-600">Don't have an account? 
+                  <button 
+                    onClick={() => {
+                      setShowLogin(false);
+                      setShowRegister(true);
+                    }}
+                    className="text-cyan-600 hover:text-cyan-700 ml-1 font-medium"
+                  >
+                    Register here
+                  </button>
+                </p>
+              </div>
+            </div>
+          </motion.div>
         </div>
-      </section>
+      )}
+
+      {/* Register Modal */}
+      {showRegister && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <motion.div 
+            className="bg-white rounded-xl shadow-xl w-full max-w-md"
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+          >
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-800">Create an Account</h2>
+                <button 
+                  onClick={() => setShowRegister(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <FaTimes />
+                </button>
+              </div>
+              
+              <form onSubmit={handleRegister}>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
+                  <input
+                    type="text"
+                    name="fullName"
+                    value={registerData.fullName}
+                    onChange={handleRegisterChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                    required
+                  />
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <FaUser className="text-gray-400" />
+                    </div>
+                    <input
+                      type="email"
+                      name="email"
+                      value={registerData.email}
+                      onChange={handleRegisterChange}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <FaLock className="text-gray-400" />
+                    </div>
+                    <input
+                      type="password"
+                      name="password"
+                      value={registerData.password}
+                      onChange={handleRegisterChange}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password *</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <FaLock className="text-gray-400" />
+                    </div>
+                    <input
+                      type="password"
+                      name="confirmPassword"
+                      value={registerData.confirmPassword}
+                      onChange={handleRegisterChange}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
+                      required
+                    />
+                  </div>
+                </div>
+                
+                <button
+                  type="submit"
+                  className="w-full bg-cyan-600 text-white py-2 px-4 rounded-lg hover:bg-cyan-700 transition-colors flex items-center justify-center"
+                >
+                  Register <FaUserPlus className="ml-2" />
+                </button>
+              </form>
+              
+              <div className="mt-4 text-center">
+                <p className="text-gray-600">Already have an account? 
+                  <button 
+                    onClick={() => {
+                      setShowRegister(false);
+                      setShowLogin(true);
+                    }}
+                    className="text-cyan-600 hover:text-cyan-700 ml-1 font-medium"
+                  >
+                    Login here
+                  </button>
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Application Modal */}
       {applicationStep > 0 && (
