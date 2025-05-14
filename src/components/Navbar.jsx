@@ -28,7 +28,7 @@ const Navbar = () => {
   };
 
   const handleSortboxClick = () => {
-    window.open("https://sortboxs.com/", "_blank");
+    window.open("https://hr-pro-hrms-landing-page.vercel.app/", "_blank");
   };
 
   return (
