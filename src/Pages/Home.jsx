@@ -5,6 +5,7 @@ import ClientsCarousel from "../components/Home/ClientsCarousel";
 import ServicesCards from "../components/Home/ServicesCards";
 import WhyWeStandOut from "../components/Home/WhyWeStandOut";
 
+//Homepage
 const Home = () => {
   const currentUrl = window.location.href;
   return (
